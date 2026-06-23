@@ -1,0 +1,32 @@
+name: Guard dev merges
+
+# Blocks merges into `dev` while a "prod push" is in flight.
+# A prod push is an open PR into `prod` carrying the `prod-push` label.
+# While one is open, this check fails so dev cannot move ahead of prod.
+
+on:
+  pull_request:
+    branches: [dev]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  block-merge-on-prod-push:
+    name: block-merge-on-prod-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if an open labelled prod push exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          count=$(gh pr list --repo "$REPO" --state open --base prod --label prod-push --json number --jq 'length')
+          echo "Open labelled prod-push PRs into prod: $count"
+          if [ "$count" -gt 0 ]; then
+            gh pr list --repo "$REPO" --state open --base prod --label prod-push
+            echo "::error::A labelled prod push is open. Merges into dev are blocked until it is merged or closed."
+            exit 1
+          fi
+          echo "No open labelled prod push — dev merges allowed."
