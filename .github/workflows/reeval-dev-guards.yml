@@ -1,0 +1,32 @@
+name: Re-evaluate dev guards
+
+# When a prod push PR is opened/labelled/unlabelled/closed, the open PRs into
+# `dev` won't re-run their own guard by themselves. This re-runs the guard for
+# every open dev PR so their merge-block status reflects the new prod-push state.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, labeled, unlabeled, closed]
+    branches: [prod]
+
+permissions:
+  actions: write
+  pull-requests: read
+
+jobs:
+  reeval:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run the dev guard for every open PR into dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          for pr in $(gh pr list --repo "$REPO" --base dev --state open --json number --jq '.[].number'); do
+            head=$(gh pr view "$pr" --repo "$REPO" --json headRefName --jq '.headRefName')
+            run=$(gh run list --repo "$REPO" --branch "$head" --workflow "Guard dev merges" --limit 1 --json databaseId --jq '.[0].databaseId')
+            if [ -n "$run" ]; then
+              echo "Re-running guard for dev PR #$pr (branch $head, run $run)"
+              gh run rerun "$run" --repo "$REPO"
+            fi
+          done
